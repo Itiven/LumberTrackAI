@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Фон -->
+  <rect width="512" height="512" fill="#18181b" rx="80"/>
+  
+  <!-- Дерево/доска - стилизованная -->
+  <g transform="translate(128, 128)">
+    <!-- Доска -->
+    <rect x="0" y="0" width="256" height="64" fill="#f97316" rx="8"/>
+    <rect x="16" y="16" width="224" height="32" fill="#ea580c" rx="4"/>
+    
+    <!-- Линии структуры дерева -->
+    <line x1="64" y1="0" x2="64" y2="64" stroke="#d97706" stroke-width="2"/>
+    <line x1="128" y1="0" x2="128" y2="64" stroke="#d97706" stroke-width="2"/>
+    <line x1="192" y1="0" x2="192" y2="64" stroke="#d97706" stroke-width="2"/>
+  </g>
+  
+  <!-- Надпись "LT" в углу -->
+  <text x="400" y="150" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="#ffffff">LT</text>
+</svg>
+
+
+
+

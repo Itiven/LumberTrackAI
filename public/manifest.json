@@ -1,0 +1,31 @@
+{
+  "name": "LumberTrack AI",
+  "short_name": "LumberTrack",
+  "description": "Приложение для учета и аналитики выхода изделий из необрезных пиломатериалов",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#18181b",
+  "theme_color": "#f97316",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "ru",
+  "dir": "ltr"
+}
+
+
+
+

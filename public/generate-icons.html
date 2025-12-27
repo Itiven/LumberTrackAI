@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генерация иконок для PWA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #18181b;
+            color: white;
+        }
+        canvas {
+            border: 1px solid #333;
+            margin: 10px;
+            background: #18181b;
+        }
+        button {
+            background: #f97316;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #ea580c;
+        }
+        .icon-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Генерация иконок для PWA</h1>
+    <p>Нажмите кнопки ниже, чтобы сгенерировать иконки для PWA приложения.</p>
+    
+    <div class="icon-preview">
+        <div>
+            <canvas id="icon192" width="192" height="192"></canvas>
+            <button onclick="downloadIcon(192)">Скачать 192x192</button>
+        </div>
+        <div>
+            <canvas id="icon512" width="512" height="512"></canvas>
+            <button onclick="downloadIcon(512)">Скачать 512x512</button>
+        </div>
+    </div>
+    
+    <button onclick="generateAll()">Сгенерировать все иконки</button>
+
+    <script>
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const scale = size / 512;
+            
+            // Фон
+            ctx.fillStyle = '#18181b';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Скругленные углы (если поддерживается)
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size, size * 0.15625); // 80/512
+            ctx.fill();
+            
+            // Доска (оранжевая)
+            const boardX = size * 0.25;
+            const boardY = size * 0.25;
+            const boardW = size * 0.5;
+            const boardH = size * 0.125;
+            
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath();
+            ctx.roundRect(boardX, boardY, boardW, boardH, size * 0.015625);
+            ctx.fill();
+            
+            // Внутренняя часть доски
+            ctx.fillStyle = '#ea580c';
+            ctx.beginPath();
+            ctx.roundRect(boardX + boardW * 0.0625, boardY + boardH * 0.25, boardW * 0.875, boardH * 0.5, size * 0.0078125);
+            ctx.fill();
+            
+            // Линии структуры дерева
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = size * 0.00390625;
+            for (let i = 1; i <= 3; i++) {
+                const x = boardX + (boardW / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(x, boardY);
+                ctx.lineTo(x, boardY + boardH);
+                ctx.stroke();
+            }
+            
+            // Надпись "LT"
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${size * 0.15625}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('LT', size * 0.78, size * 0.29);
+        }
+        
+        function generateAll() {
+            drawIcon(document.getElementById('icon192'), 192);
+            drawIcon(document.getElementById('icon512'), 512);
+        }
+        
+        function downloadIcon(size) {
+            const canvas = document.getElementById(`icon${size}`);
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `icon-${size}x${size}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+        
+        // Polyfill для roundRect, если не поддерживается
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, width, height, radius) {
+                this.beginPath();
+                this.moveTo(x + radius, y);
+                this.lineTo(x + width - radius, y);
+                this.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.lineTo(x + width, y + height - radius);
+                this.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.lineTo(x + radius, y + height);
+                this.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+                this.closePath();
+            };
+        }
+        
+        // Автоматическая генерация при загрузке
+        window.addEventListener('load', generateAll);
+    </script>
+</body>
+</html>
+

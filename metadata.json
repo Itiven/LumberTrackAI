@@ -1,0 +1,5 @@
+{
+  "name": "LumberTrack AI",
+  "description": "Приложение для учета и аналитики выхода изделий из необрезных пиломатериалов с интерфейсом в стиле Telegram Web App.",
+  "requestFramePermissions": []
+}
