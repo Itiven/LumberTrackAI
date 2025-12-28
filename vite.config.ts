@@ -8,9 +8,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      cors: true,
       hmr: {
         clientPort: 3000
-      }
+      },
+      // Проксі видалено - використовуємо прямі запити без спеціальних заголовків для обходу CORS
     },
     plugins: [react()],
     define: {

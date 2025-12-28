@@ -4,6 +4,54 @@ import { BoardDimensions, CartItem, AnalysisResult, ProductTypeDefinition, Produ
 const IMAGE_CACHE_VERSION = '1.0.0';
 
 /**
+ * Виконати JSONP запит для обходу CORS
+ * @param url - URL для запиту
+ * @returns Promise з даними
+ */
+const jsonpRequest = (url: string): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    // Створюємо унікальне ім'я для callback функції
+    const callbackName = 'jsonp_callback_' + Math.random().toString(36).substr(2, 9);
+
+    // Додаємо callback параметр до URL
+    const urlObj = new URL(url);
+    urlObj.searchParams.append('callback', callbackName);
+
+    // Створюємо script тег
+    const script = document.createElement('script');
+    script.src = urlObj.toString();
+    script.async = true;
+
+    // Додаємо callback функцію до window
+    (window as any)[callbackName] = (data: any) => {
+      // Видаляємо script тег та callback функцію
+      document.body.removeChild(script);
+      delete (window as any)[callbackName];
+      resolve(data);
+    };
+
+    // Обробка помилок
+    script.onerror = () => {
+      document.body.removeChild(script);
+      delete (window as any)[callbackName];
+      reject(new Error('JSONP request failed'));
+    };
+
+    // Додаємо script до DOM
+    document.body.appendChild(script);
+
+    // Timeout для безпеки
+    setTimeout(() => {
+      if ((window as any)[callbackName]) {
+        document.body.removeChild(script);
+        delete (window as any)[callbackName];
+        reject(new Error('JSONP request timeout'));
+      }
+    }, 30000);
+  });
+};
+
+/**
  * Generate image URL with cache busting hash
  * @param productName - Name of the product
  * @param customImageUrl - Custom image URL from sheet (if provided)
@@ -14,18 +62,18 @@ export const getProductImageUrl = (productName: string, customImageUrl?: string)
   if (customImageUrl && (customImageUrl.startsWith('http://') || customImageUrl.startsWith('https://') || customImageUrl.startsWith('data:'))) {
     return customImageUrl;
   }
-  
+
   // If custom URL is provided and it's a relative path, use it with version hash
   if (customImageUrl && customImageUrl.trim() !== '') {
     const separator = customImageUrl.includes('?') ? '&' : '?';
     return `${customImageUrl}${separator}v=${IMAGE_CACHE_VERSION}`;
   }
-  
+
   // Default: use /images/ folder with product name and version hash for cache busting
   if (productName) {
     return `/images/${productName}.png?v=${IMAGE_CACHE_VERSION}`;
   }
-  
+
   return '';
 };
 
@@ -91,11 +139,13 @@ export const saveToGoogleSheet = async (
 
   if (webhookUrl) {
     try {
+      // Використовуємо 'text/plain' замість 'application/json' для обходу CORS preflight запиту
+      // Браузер не відправляє OPTIONS запит для 'text/plain', що дозволяє Google Apps Script приймати дані без помилок CORS
       await fetch(webhookUrl, {
         method: 'POST',
         mode: 'no-cors',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain',
         },
         body: JSON.stringify(payload)
       });
@@ -144,11 +194,12 @@ export const updateSheetEntry = async (
   console.log("Updating external service...", payload);
 
   try {
+    // Використовуємо 'text/plain' замість 'application/json' для обходу CORS preflight запиту
     await fetch(webhookUrl, {
       method: 'POST',
       mode: 'no-cors',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain',
       },
       body: JSON.stringify(payload)
     });
@@ -215,7 +266,7 @@ export const fetchProducts = async (webhookUrl?: string): Promise<Product[]> => 
       .map((row: any) => {
         // Generate image URL using helper function (uses /images/ folder with hash for cache busting)
         const imageUrl = getProductImageUrl(row.name, row.image);
-        
+
         return {
           id: String(row.id),
           name: row.name,
@@ -244,7 +295,7 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
   }
 
   console.log('[fetchUsers] Fetching users from Google Sheet, URL:', webhookUrl);
-  
+
   try {
     // Валідація та нормалізація URL
     let url: URL;
@@ -254,22 +305,40 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
       console.error('[fetchUsers] Invalid URL:', webhookUrl);
       throw new Error(`Некорректный URL: ${webhookUrl}`);
     }
-    
+
     url.searchParams.append('action', 'getUsers');
     const fetchUrl = url.toString();
-    console.log('[fetchUsers] Full fetch URL:', fetchUrl);
 
-    // Спрощений fetch без AbortController для сумісності з Android
-    const response = await fetch(fetchUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: {
-        'Accept': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      },
-      // Не використовуємо mode: 'no-cors' для GET запитів, щоб бачити помилки
-    });
+    console.log('[fetchUsers] Fetch URL:', fetchUrl);
+    console.log('[fetchUsers] User agent:', navigator.userAgent);
+    console.log('[fetchUsers] Is service worker controlled:', !!navigator.serviceWorker?.controller);
+
+    // Використовуємо прямий запит БЕЗ спеціальних заголовків, щоб уникнути preflight запиту
+    // Без заголовків браузер не відправляє OPTIONS запит, що дозволяє обійти CORS проблеми
+    let response: Response;
+    try {
+      response = await fetch(fetchUrl, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        redirect: 'follow',
+        cache: 'no-store',
+        referrerPolicy: 'no-referrer'
+        // НЕ додаємо заголовки - це викликає preflight запит і CORS помилки
+      });
+    } catch (fetchError: any) {
+      console.error('[fetchUsers] Fetch error details:', {
+        name: fetchError?.name,
+        message: fetchError?.message,
+        stack: fetchError?.stack
+      });
+
+      // Детальніша інформація про помилку
+      if (fetchError?.name === 'TypeError' && fetchError?.message === 'Failed to fetch') {
+        throw new Error('Не удалось подключиться к серверу. Проверьте подключение к интернету и доступность сервера Google Apps Script.');
+      }
+      throw fetchError;
+    }
 
     console.log('[fetchUsers] Response status:', response.status, response.statusText);
     console.log('[fetchUsers] Response ok:', response.ok);
@@ -288,7 +357,7 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
 
     const contentType = response.headers.get('content-type') || '';
     console.log('[fetchUsers] Response Content-Type:', contentType);
-    
+
     // Перевірка Content-Type, але не строга для сумісності
     if (contentType && !contentType.includes('application/json') && !contentType.includes('text/plain')) {
       const text = await response.text();
@@ -305,10 +374,10 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
       console.error('[fetchUsers] Response text:', text.substring(0, 500));
       throw new Error(`Ошибка парсинга JSON: ${jsonError.message}`);
     }
-    
+
     console.log('[fetchUsers] Parsed JSON data type:', Array.isArray(rawData) ? 'array' : typeof rawData);
     console.log('[fetchUsers] Data length:', Array.isArray(rawData) ? rawData.length : 'N/A');
-    
+
     // Expected structure from sheet based on screenshot: name, password, role, id, login
     if (!Array.isArray(rawData)) {
       console.error('[fetchUsers] Response is not an array:', rawData);
@@ -331,7 +400,7 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
     console.error('[fetchUsers] Error type:', error?.name);
     console.error('[fetchUsers] Error message:', error?.message);
     console.error('[fetchUsers] Error stack:', error?.stack);
-    
+
     // Створюємо більш зрозуміле повідомлення про помилку
     let errorMessage = 'Ошибка при загрузке пользователей';
     if (error?.message) {
@@ -341,7 +410,7 @@ export const fetchUsers = async (webhookUrl: string): Promise<User[]> => {
     } else if (typeof error === 'string') {
       errorMessage = error;
     }
-    
+
     // Викидаємо помилку далі з покращеним повідомленням
     throw new Error(errorMessage);
   }
@@ -365,11 +434,12 @@ export const deleteEntry = async (
   };
 
   try {
+    // Використовуємо 'text/plain' замість 'application/json' для обходу CORS preflight запиту
     await fetch(webhookUrl, {
       method: 'POST',
       mode: 'no-cors',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain',
       },
       body: JSON.stringify(payload)
     });
@@ -390,11 +460,12 @@ export const cleanupDatabase = async (webhookUrl?: string): Promise<boolean> => 
   };
 
   try {
+    // Використовуємо 'text/plain' замість 'application/json' для обходу CORS preflight запиту
     await fetch(webhookUrl, {
       method: 'POST',
       mode: 'no-cors',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain',
       },
       body: JSON.stringify(payload)
     });
@@ -504,7 +575,7 @@ export const sendTelegramLog = async (webhookUrl: string, message: string): Prom
   try {
     // Отримуємо налаштування з листа "Настройки"
     const settings = await fetchSettings(webhookUrl);
-    
+
     // Шукаємо telegram_token та telegram_chat_id
     const telegramTokenSetting = settings.find((s: any) => s.key === 'telegram_token' || s.key === 'telegram_bot_token');
     const telegramChatIdSetting = settings.find((s: any) => s.key === 'telegram_chat_id' || s.key === 'telegram_chat');
@@ -567,11 +638,12 @@ const crudOperation = async (
       idField: idField
     };
 
+    // Використовуємо 'text/plain' замість 'application/json' для обходу CORS preflight запиту
     const response = await fetch(webhookUrl, {
       method: 'POST',
       mode: 'no-cors',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain',
       },
       body: JSON.stringify(payload)
     });

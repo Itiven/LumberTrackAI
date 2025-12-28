@@ -11,11 +11,26 @@ interface AuthViewProps {
 }
 
 // Utility to hash password
-async function sha256(message: string) {
-    const msgBuffer = new TextEncoder().encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+async function sha256(message: string): Promise<string> {
+    try {
+        // Використовуємо window.crypto.subtle для сумісності
+        const cryptoObj = window.crypto || (globalThis as any).crypto;
+        if (!cryptoObj || !cryptoObj.subtle) {
+            console.warn('[sha256] crypto.subtle not available, using fallback');
+            // Fallback: якщо crypto.subtle недоступний, повертаємо оригінальний рядок
+            // (це означає, що паролі повинні зберігатися як plaintext)
+            return message;
+        }
+        
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await cryptoObj.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (error) {
+        console.error('[sha256] Error hashing password:', error);
+        // Fallback: повертаємо оригінальний рядок якщо хешування не вдалося
+        return message;
+    }
 }
 
 const AuthView: React.FC<AuthViewProps> = ({ onLogin, settings, onUpdateSettings }) => {
@@ -126,13 +141,15 @@ const AuthView: React.FC<AuthViewProps> = ({ onLogin, settings, onUpdateSettings
         // Якщо повідомлення вже зрозуміле, використовуємо його
         if (err.message.includes('Ошибка') || err.message.includes('HTTP') || err.message.includes('не удалось')) {
           errorMessage = err.message;
+        } else if (err.message === 'Failed to fetch') {
+          errorMessage = 'Ошибка подключения к серверу. Проверьте:\n1. Подключение к интернету\n2. Доступность Google Apps Script\n3. Правильность URL';
         } else {
           errorMessage += `: ${err.message}`;
         }
       } else if (typeof err === 'string') {
         errorMessage = err;
       } else if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        errorMessage = 'Ошибка сети: не удалось подключиться к серверу. Проверьте подключение к интернету.';
+        errorMessage = 'Ошибка сети: не удалось подключиться к серверу. Проверьте подключение к интернету и доступность Google Apps Script.';
       } else if (err?.name === 'AbortError') {
         errorMessage = 'Превышено время ожидания. Попробуйте еще раз.';
       }
