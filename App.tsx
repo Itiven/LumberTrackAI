@@ -12,9 +12,11 @@ import { fetchProductTypes, fetchProducts } from './services/sheetService';
 import { INITIAL_LEADERBOARD, MOCK_PRODUCTS } from './constants';
 import { Loader2 } from 'lucide-react';
 
-import AnalyticsDashboard from './components/AnalyticsDashboard';
+import OwnerMainView from './components/OwnerMainView';
+import ReferencesView from './components/ReferencesView';
+import DashboardsView from './components/dashboards/DashboardsView';
 
-type Step = 'auth' | 'input' | 'grid' | 'analysis' | 'settings' | 'history' | 'analytics' | 'employee';
+type Step = 'auth' | 'input' | 'grid' | 'analysis' | 'settings' | 'history' | 'employee' | 'ownerMain' | 'references' | 'dashboards';
 
 export interface AppSettings {
   minYield: number;
@@ -61,7 +63,12 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const user = JSON.parse(saved);
-        return user.role === 'Сотрудник' ? 'employee' : 'input';
+        if (user.role === 'Сотрудник') {
+          return 'employee';
+        } else if (user.role === 'Власник') {
+          return 'ownerMain';
+        }
+        return 'input';
       } catch (e) {
         return 'auth';
       }
@@ -180,8 +187,14 @@ const App: React.FC = () => {
     localStorage.setItem('lumberUser', loggedInUser.name);
 
     setUser(loggedInUser);
-    // Redirect to employee view for Сотрудник role
-    setStep(loggedInUser.role === 'Сотрудник' ? 'employee' : 'input');
+    // Redirect based on role
+    if (loggedInUser.role === 'Сотрудник') {
+      setStep('employee');
+    } else if (loggedInUser.role === 'Власник') {
+      setStep('ownerMain');
+    } else {
+      setStep('input');
+    }
   };
 
   const handleLogout = () => {
@@ -361,16 +374,47 @@ const App: React.FC = () => {
         />
       )}
 
+      {step === 'ownerMain' && user?.role === 'Власник' && (
+        <OwnerMainView
+          userName={user.name}
+          userLogin={user.login}
+          onLogout={handleLogout}
+          settings={settings}
+          onOpenReferences={() => setStep('references')}
+          onOpenSettings={() => setStep('settings')}
+          onOpenDashboards={() => setStep('dashboards')}
+        />
+      )}
+
+      {step === 'references' && (
+        <ReferencesView
+          onBack={() => setStep('ownerMain')}
+          settings={settings}
+        />
+      )}
+
+      {step === 'dashboards' && (
+        <DashboardsView
+          onBack={() => setStep('ownerMain')}
+          settings={settings}
+        />
+      )}
+
       {step === 'settings' && (
         <SettingsView
-          onBack={handleBackFromHistory}
+          onBack={() => {
+            if (user?.role === 'Власник') {
+              setStep('ownerMain');
+            } else {
+              handleBackFromHistory();
+            }
+          }}
           userName={user?.name || 'Пользователь'}
           userRole={user?.role}
           userLogin={user?.login}
           onLogout={handleLogout}
           settings={settings}
           onUpdateSettings={handleUpdateSettings}
-          onOpenAnalytics={() => setStep('analytics')}
         />
       )}
 
@@ -418,12 +462,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {step === 'analytics' && (
-        <AnalyticsDashboard
-          onBack={handleBackFromHistory} // Reuse back logic or create new
-          settings={settings}
-        />
-      )}
 
       {step === 'employee' && (
         <EmployeeInputView

@@ -5,6 +5,7 @@ import { Package, Settings, History, Loader2, RefreshCcw, Info, Plus, Minus, Sav
 import { fetchPartitions, fetchSettings, saveToGoogleSheet } from '../services/sheetService';
 import { analyzeYield } from '../services/geminiService';
 import { HelpModal } from './HelpModal';
+import WidthSelector from './widthSelector/WidthSelector';
 
 interface EmployeeInputViewProps {
   products: Product[];
@@ -57,7 +58,10 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
   const [successEmoji, setSuccessEmoji] = useState<string>('😊');
   const [defaultKPISettings, setDefaultKPISettings] = useState<KPISettings | null>(null);
   const [selectedPartition, setSelectedPartition] = useState<Partition | null>(null);
+  const [showWidthSelector, setShowWidthSelector] = useState(false);
   const widthInputRef = useRef<HTMLInputElement>(null);
+  const lengthInputRef = useRef<HTMLInputElement>(null);
+  const thicknessInputRef = useRef<HTMLInputElement>(null);
   const previousBatchNumberRef = useRef<string>('');
 
   // Default KPI settings (fallback if not loaded from sheet)
@@ -353,6 +357,80 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
       setDims(prev => ({ ...prev, [field]: isNaN(num) ? 0 : num }));
     }
     setError('');
+  };
+
+  // Function to find and focus next empty board dimension field
+  const focusNextEmptyField = (currentField?: 'length' | 'width' | 'thickness') => {
+    // Define field order
+    const fieldOrder: Array<'length' | 'width' | 'thickness'> = ['length', 'width', 'thickness'];
+    
+    // Find current field index, start from next field
+    let startIndex = 0;
+    if (currentField) {
+      const currentIndex = fieldOrder.indexOf(currentField);
+      if (currentIndex !== -1) {
+        startIndex = currentIndex + 1;
+      }
+    }
+    
+    // Check fields in order starting from next field after current
+    for (let i = startIndex; i < fieldOrder.length; i++) {
+      const field = fieldOrder[i];
+      const isLocked = lockedFields[field];
+      const value = dims[field];
+      
+      if (!isLocked && (!value || value <= 0)) {
+        const ref = field === 'length' ? lengthInputRef : field === 'width' ? widthInputRef : thicknessInputRef;
+        ref.current?.focus();
+        ref.current?.select();
+        return;
+      }
+    }
+    
+    // Check from beginning if we started from middle
+    if (startIndex > 0) {
+      for (let i = 0; i < startIndex; i++) {
+        const field = fieldOrder[i];
+        const isLocked = lockedFields[field];
+        const value = dims[field];
+        
+        if (!isLocked && (!value || value <= 0)) {
+          const ref = field === 'length' ? lengthInputRef : field === 'width' ? widthInputRef : thicknessInputRef;
+          ref.current?.focus();
+          ref.current?.select();
+          return;
+        }
+      }
+    }
+    
+    // All fields are filled, scroll to first product button
+    if (products.length > 0) {
+      const firstProductCard = document.querySelector('[data-product-card]');
+      if (firstProductCard) {
+        firstProductCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Try to focus the first product button
+        const firstProductButton = firstProductCard.querySelector('button');
+        if (firstProductButton) {
+          setTimeout(() => {
+            firstProductButton.focus();
+          }, 300);
+        }
+      }
+    }
+  };
+
+  // Handle Enter key to move to next field
+  const handleKeyDown = (field: 'length' | 'width' | 'thickness', e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Blur current field to close keyboard on mobile
+      (e.target as HTMLInputElement).blur();
+      
+      // Small delay to ensure keyboard closes before focusing next field
+      setTimeout(() => {
+        focusNextEmptyField(field);
+      }, 100);
+    }
   };
 
   const getQuantity = (productId: string) => {
@@ -662,11 +740,13 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
                   {lockedFields.length && <span className="text-xs text-orange-500">Авто</span>}
                 </label>
                 <input
+                  ref={lengthInputRef}
                   type="number"
                   inputMode="numeric"
                   step="10"
                   value={dims.length || ''}
                   onChange={(e) => handleChange('length', e.target.value)}
+                  onKeyDown={(e) => handleKeyDown('length', e)}
                   disabled={lockedFields.length}
                   className={`w-full bg-[#18181b] border border-zinc-700 rounded-lg p-2 text-sm focus:outline-none focus:border-orange-500 transition-colors text-white ${lockedFields.length ? 'opacity-50 cursor-not-allowed' : ''}`}
                 />
@@ -685,8 +765,16 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
                   step="10"
                   value={dims.width || ''}
                   onChange={(e) => handleChange('width', e.target.value)}
+                  onKeyDown={(e) => handleKeyDown('width', e)}
+                  onDoubleClick={(e) => {
+                    if (!lockedFields.width) {
+                      // Close keyboard on mobile before opening modal
+                      (e.target as HTMLInputElement).blur();
+                      setShowWidthSelector(true);
+                    }
+                  }}
                   disabled={lockedFields.width}
-                  className={`w-full bg-[#18181b] border border-zinc-700 rounded-lg p-2 text-sm focus:outline-none focus:border-orange-500 transition-colors text-white ${lockedFields.width ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`w-full bg-[#18181b] border border-zinc-700 rounded-lg p-2 text-sm focus:outline-none focus:border-orange-500 transition-colors text-white ${lockedFields.width ? 'opacity-50 cursor-not-allowed' : 'cursor-text'}`}
                 />
               </div>
 
@@ -697,10 +785,12 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
                   {lockedFields.thickness && <span className="text-xs text-orange-500">Авто</span>}
                 </label>
                 <input
+                  ref={thicknessInputRef}
                   type="number"
                   inputMode="numeric"
                   value={dims.thickness || ''}
                   onChange={(e) => handleChange('thickness', e.target.value)}
+                  onKeyDown={(e) => handleKeyDown('thickness', e)}
                   disabled={lockedFields.thickness}
                   className={`w-full bg-[#18181b] border border-zinc-700 rounded-lg p-2 text-sm focus:outline-none focus:border-orange-500 transition-colors text-white ${lockedFields.thickness ? 'opacity-50 cursor-not-allowed' : ''}`}
                 />
@@ -728,10 +818,11 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
             {products.map((product) => {
               const qty = getQuantity(product.id);
               return (
-                <div
-                  key={product.id}
-                  className="bg-[#27272a] rounded-2xl overflow-hidden flex flex-col shadow-sm border border-zinc-800"
-                >
+                  <div
+                    key={product.id}
+                    data-product-card
+                    className="bg-[#27272a] rounded-2xl overflow-hidden flex flex-col shadow-sm border border-zinc-800"
+                  >
                   {/* Product Image */}
                   <div 
                     className="relative h-32 w-full bg-zinc-800 cursor-pointer"
@@ -885,6 +976,7 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
         <p>
           <strong className="text-white block mb-1">Поля доски:</strong>
           Выберите партию и введите параметры необрезной доски. Поля могут автоматически заполняться при выборе партии.
+          Для выбора ширины сделайте двойной клик (или двойной тап) на поле "Ширина".
         </p>
         <p>
           <strong className="text-white block mb-1">Выбор продукции:</strong>
@@ -895,6 +987,15 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
           После ввода всех данных нажмите кнопку "Сохранить" внизу экрана. Данные будут отправлены на webhook.
         </p>
       </HelpModal>
+      <WidthSelector
+        isOpen={showWidthSelector}
+        onClose={() => setShowWidthSelector(false)}
+        onSelect={(width) => {
+          setDims(prev => ({ ...prev, width }));
+          setError('');
+        }}
+        webhookUrl={webappUrl}
+      />
     </div>
   );
 };

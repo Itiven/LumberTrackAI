@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, User, TrendingUp, Clock, BarChart3, PieChart, Download, Loader2, Coins, Box, AlertCircle } from 'lucide-react';
-import { fetchFullHistory } from '../services/sheetService';
-import { AppSettings } from '../App';
+import { fetchFullHistory } from '../../services/sheetService';
+import { AppSettings } from '../../App';
 
 interface AnalyticsDashboardProps {
     onBack: () => void;

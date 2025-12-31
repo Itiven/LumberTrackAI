@@ -725,6 +725,39 @@ export const fetchReportSettings = async (webhookUrl: string): Promise<any[]> =>
 };
 
 /**
+ * Fetch unpivoted report data from ОТЧЕТ sheet
+ */
+export const fetchUnpivotedReport = async (webhookUrl: string): Promise<any[]> => {
+  if (!webhookUrl) return [];
+
+  console.log("Fetching unpivoted report from Google Sheet...");
+  try {
+    const url = new URL(webhookUrl);
+    url.searchParams.append('action', 'getUnpivotedReport');
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const rawData = await response.json();
+    console.log("Fetched unpivoted report data:", rawData);
+
+    if (!Array.isArray(rawData)) return [];
+    return rawData;
+  } catch (error) {
+    console.error("Failed to fetch unpivoted report:", error);
+    return [];
+  }
+};
+
+/**
  * ==========================================
  * GOOGLE APPS SCRIPT SETUP (SERVER-SIDE)
  * ==========================================

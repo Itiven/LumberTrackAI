@@ -3,6 +3,7 @@ import { BoardDimensions, Partition } from '../types';
 import { Ruler, ArrowRight, Package, Settings, History, Loader2, RefreshCcw, Info } from 'lucide-react';
 import { fetchPartitions } from '../services/sheetService';
 import { HelpModal } from './HelpModal';
+import WidthSelector from './widthSelector/WidthSelector';
 
 interface BoardInputProps {
   onContinue: (dims: BoardDimensions) => void;
@@ -57,6 +58,7 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
   const [partitions, setPartitions] = useState<Partition[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showWidthSelector, setShowWidthSelector] = useState(false);
 
   // ... (handlers)
 
@@ -122,6 +124,42 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
       setDims(prev => ({ ...prev, [field]: isNaN(num) ? 0 : num }));
     }
     setError('');
+  };
+
+  // Function to find and focus next empty board dimension field
+  const focusNextEmptyField = (currentField?: 'length' | 'width' | 'thickness') => {
+    // Since BoardInput doesn't have refs, we'll use a simpler approach
+    // Just scroll to the product grid if all fields are filled
+    // Note: In BoardInput, navigation is less critical as it's a simpler form
+    // But we can still close the keyboard
+    const allFieldsFilled = 
+      (lockedFields.length || (dims.length && dims.length > 0)) &&
+      (lockedFields.width || (dims.width && dims.width > 0)) &&
+      (lockedFields.thickness || (dims.thickness && dims.thickness > 0));
+    
+    if (allFieldsFilled) {
+      // Scroll to submit button or product grid area
+      const submitButton = document.querySelector('button[type="submit"]');
+      if (submitButton) {
+        setTimeout(() => {
+          submitButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+    }
+  };
+
+  // Handle Enter key to move to next field (simplified for BoardInput)
+  const handleKeyDown = (field: 'length' | 'width' | 'thickness', e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Blur current field to close keyboard on mobile
+      (e.target as HTMLInputElement).blur();
+      
+      // Small delay to ensure keyboard closes
+      setTimeout(() => {
+        focusNextEmptyField(field);
+      }, 100);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -232,6 +270,7 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
             inputMode="numeric"
             value={dims.length}
             onChange={(e) => handleChange('length', e.target.value)}
+            onKeyDown={(e) => handleKeyDown('length', e)}
             disabled={lockedFields.length}
             className={`w-full bg-[#27272a] border border-zinc-700 rounded-xl p-4 text-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-colors text-white ${lockedFields.length ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
@@ -247,8 +286,16 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
               inputMode="numeric"
               value={dims.width}
               onChange={(e) => handleChange('width', e.target.value)}
+              onKeyDown={(e) => handleKeyDown('width', e)}
+              onDoubleClick={(e) => {
+                if (!lockedFields.width) {
+                  // Close keyboard on mobile before opening modal
+                  (e.target as HTMLInputElement).blur();
+                  setShowWidthSelector(true);
+                }
+              }}
               disabled={lockedFields.width}
-              className={`w-full bg-[#27272a] border border-zinc-700 rounded-xl p-4 text-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-colors text-white ${lockedFields.width ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full bg-[#27272a] border border-zinc-700 rounded-xl p-4 text-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-colors text-white ${lockedFields.width ? 'opacity-50 cursor-not-allowed' : 'cursor-text'}`}
             />
           </div>
           <div>
@@ -261,6 +308,7 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
               inputMode="numeric"
               value={dims.thickness}
               onChange={(e) => handleChange('thickness', e.target.value)}
+              onKeyDown={(e) => handleKeyDown('thickness', e)}
               disabled={lockedFields.thickness}
               className={`w-full bg-[#27272a] border border-zinc-700 rounded-xl p-4 text-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-colors text-white ${lockedFields.thickness ? 'opacity-50 cursor-not-allowed' : ''}`}
             />
@@ -308,6 +356,7 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
         <p>
           <strong className="text-white block mb-1">Размеры (ДхШхТ):</strong>
           Укажите параметры <b>необрезной доски</b> в мм. Поля блокируются при авто-заполнении.
+          Для выбора ширины сделайте двойной клик (или двойной тап) на поле "Ширина".
         </p>
         <p>
           <strong className="text-white block mb-1">Кнопки:</strong>
@@ -315,6 +364,15 @@ const BoardInput: React.FC<BoardInputProps> = ({ onContinue, onOpenSettings, onO
           <b>Начать учет</b> - перейти к добавлению продукции для этой доски.
         </p>
       </HelpModal>
+      <WidthSelector
+        isOpen={showWidthSelector}
+        onClose={() => setShowWidthSelector(false)}
+        onSelect={(width) => {
+          setDims(prev => ({ ...prev, width }));
+          setError('');
+        }}
+        webhookUrl={webappUrl}
+      />
     </div>
   );
 };
