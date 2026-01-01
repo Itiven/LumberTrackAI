@@ -458,8 +458,9 @@ const EmployeeInputView: React.FC<EmployeeInputViewProps> = ({
     }
 
     // Calculate board volume in m³
-    const boardVolumeMm3 = dims.length * dims.width * dims.thickness;
-    const boardVolumeM3 = boardVolumeMm3 / 1e9;
+    // Объем доски (м³): (Ширина * Толщина * Длина) / 1000000000
+    const boardVolumeMm3 = dims.width * dims.thickness * dims.length;
+    const boardVolumeM3 = boardVolumeMm3 / 1000000000;
 
     // Calculate board cost
     const boardCost = selectedUnitCost * boardVolumeM3;

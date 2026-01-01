@@ -27,15 +27,18 @@ export interface AppSettings {
   gridColumns?: number; // Number of columns in product grid (default: 6)
 }
 
+// Get webhook URL from environment variable
+const envWebhookUrl = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
+
 const DEFAULT_SETTINGS: AppSettings = {
   minYield: 10,
   maxYield: 98,
   isYieldControlEnabled: false,
-  googleSheetUrl: '',
+  googleSheetUrl: envWebhookUrl, // Initialize from env if available
   isAiAnalysisEnabled: true, // Default to enabled
   gridColumns: 6 // Default grid columns for desktop/tablet
 };
-const envWebhookUrl = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
+
 const App: React.FC = () => {
   // Initialize state from localStorage
   const [user, setUser] = useState<User | null>(() => {
@@ -55,7 +58,10 @@ const App: React.FC = () => {
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('lumberSettings');
-    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    const savedSettings = saved ? JSON.parse(saved) : {};
+    // If no saved URL, use env value if available
+    const googleSheetUrl = savedSettings.googleSheetUrl || envWebhookUrl || '';
+    return { ...DEFAULT_SETTINGS, ...savedSettings, googleSheetUrl };
   });
 
   const [step, setStep] = useState<Step>(() => {

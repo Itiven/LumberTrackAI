@@ -23,8 +23,9 @@ export const calculateStats = (board: BoardDimensions | null, items: CartItem[])
   const totalEarnings = items.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
 
   // 2. Calculate Yield % and Volumes
-  const boardVolumeMm3 = board ? (board.length * board.width * board.thickness) : 0;
-  const boardVolumeM3 = boardVolumeMm3 / 1e9;
+  // Объем доски (м³): (Ширина * Толщина * Длина) / 1000000000
+  const boardVolumeMm3 = board ? (board.width * board.thickness * board.length) : 0;
+  const boardVolumeM3 = boardVolumeMm3 / 1000000000;
 
   const productsVolumeMm3 = items.reduce((acc, item) => {
     // Calculate approximate volume of the finished product

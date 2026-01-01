@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Factory, Table2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Factory, Table2, ChevronRight, BarChart } from 'lucide-react';
 import { AppSettings } from '../../App';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import AnalyticsPivotTable from './AnalyticsPivotTable';
+import AnalyticsWebDataRocks from './AnalyticsWebDataRocks';
 
 interface DashboardsViewProps {
   onBack: () => void;
   settings: AppSettings;
 }
 
-type DashboardType = 'list' | 'analytics' | 'pivot';
+type DashboardType = 'list' | 'analytics' | 'pivot' | 'webdatarocks';
 
 const DashboardsView: React.FC<DashboardsViewProps> = ({ onBack, settings }) => {
   const [activeDashboard, setActiveDashboard] = useState<DashboardType>('list');
@@ -26,6 +27,15 @@ const DashboardsView: React.FC<DashboardsViewProps> = ({ onBack, settings }) => 
   if (activeDashboard === 'pivot') {
     return (
       <AnalyticsPivotTable
+        onBack={() => setActiveDashboard('list')}
+        settings={settings}
+      />
+    );
+  }
+
+  if (activeDashboard === 'webdatarocks') {
+    return (
+      <AnalyticsWebDataRocks
         onBack={() => setActiveDashboard('list')}
         settings={settings}
       />
@@ -75,6 +85,19 @@ const DashboardsView: React.FC<DashboardsViewProps> = ({ onBack, settings }) => 
                   <span className="font-medium text-purple-400 group-hover:text-purple-300">Сводная таблица</span>
                 </div>
                 <ChevronRight size={16} className="text-purple-500/50" />
+              </button>
+
+              <button
+                onClick={() => setActiveDashboard('webdatarocks')}
+                className="w-full flex items-center justify-between p-4 hover:bg-green-500/10 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-500/10 p-2 rounded-lg text-green-500 group-hover:bg-green-500 group-hover:text-white transition-colors">
+                    <BarChart size={20} />
+                  </div>
+                  <span className="font-medium text-green-400 group-hover:text-green-300">WebDataRocks Dashboard</span>
+                </div>
+                <ChevronRight size={16} className="text-green-500/50" />
               </button>
             </div>
           </div>

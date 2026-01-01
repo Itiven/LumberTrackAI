@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => {
         // path.resolve('.') resolves to the current working directory, avoiding usage of process.cwd() which caused type errors
         '@': path.resolve('.'),
       }
+    },
+    optimizeDeps: {
+      include: ['@webdatarocks/webdatarocks']
     }
   };
 });

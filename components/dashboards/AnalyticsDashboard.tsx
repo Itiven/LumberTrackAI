@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Calendar, User, TrendingUp, Clock, BarChart3, PieChart, Download, Loader2, Coins, Box, AlertCircle } from 'lucide-react';
-import { fetchFullHistory } from '../../services/sheetService';
+import { fetchFullHistory, fetchSettings } from '../../services/sheetService';
 import { AppSettings } from '../../App';
+import { KPISettings, KPIConfig } from '../../types';
+import PeriodSelector, { PeriodRange } from '../periodSelector/PeriodSelector';
 
 interface AnalyticsDashboardProps {
     onBack: () => void;
@@ -19,6 +21,8 @@ interface AnalyticsRecord {
     earnings: number;
     products: string; // JSON string
     status?: string;
+    board_cost?: number; // Стоимость доски
+    KPI?: number; // KPI значение
 }
 
 interface ExecutorStats {
@@ -28,21 +32,23 @@ interface ExecutorStats {
     totalVolumeOut: number;
     avgYield: number;
     totalEarnings: number;
-    totalTimeMinutes: number;
-    avgTimePerBoard: number;
+    totalBoardCost: number; // Сумма стоимости всех досок
 }
 
 const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, settings }) => {
     const [data, setData] = useState<AnalyticsRecord[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [periodRange, setPeriodRange] = useState<PeriodRange | null>(null);
+    const [kpiSettings, setKpiSettings] = useState<KPISettings | null>(null);
 
-    const [startDate, setStartDate] = useState<string>(
-        new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
-    );
-    const [endDate, setEndDate] = useState<string>(
-        new Date().toISOString().split('T')[0]
-    );
+    // Default KPI settings (fallback)
+    const defaultKPISettings: KPISettings = {
+        good: { emoji: '🟢', threshold: 1.5, send: false, condition: '>=' },
+        ok: { emoji: '🟡', threshold: 1.2, send: false, condition: '>=' },
+        bad: { emoji: '🟠', threshold: 1.0, send: false, condition: '<' },
+        'very bad': { emoji: '🔴', threshold: 0.5, send: false, condition: '<' }
+    };
 
     // Helper to parse date formats
     const parseDate = (dateStr: string): Date | null => {
@@ -70,6 +76,41 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
         }
         return null;
     };
+
+    // Load KPI settings
+    useEffect(() => {
+        const loadKPISettings = async () => {
+            if (!settings.googleSheetUrl) {
+                setKpiSettings(defaultKPISettings);
+                return;
+            }
+
+            try {
+                const settingsData = await fetchSettings(settings.googleSheetUrl);
+                const kpiSetting = settingsData.find((s: any) => s.key === 'bad_good_kpi');
+                
+                if (kpiSetting && kpiSetting.value) {
+                    try {
+                        const parsed = JSON.parse(kpiSetting.value);
+                        if (parsed.good && parsed.ok && parsed.bad && parsed['very bad']) {
+                            setKpiSettings(parsed);
+                            return;
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse KPI settings:', e);
+                    }
+                }
+                
+                // Use default if not found or invalid
+                setKpiSettings(defaultKPISettings);
+            } catch (e) {
+                console.error('Failed to load KPI settings:', e);
+                setKpiSettings(defaultKPISettings);
+            }
+        };
+
+        loadKPISettings();
+    }, [settings.googleSheetUrl]);
 
     useEffect(() => {
         // Try to load from LocalStorage first for speed
@@ -112,111 +153,211 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
         }
     };
 
-    const calculateTime = (startId: string, endStr: string): number => {
-        // Assuming boardId (startId) is a timestamp in ms
-        const start = Number(startId);
-        const endDate = parseDate(endStr);
-        const end = endDate?.getTime();
-
-        if (!isNaN(start) && end) {
-            const diffMs = end - start;
-            // Valid duration if between 1 minute and 12 hours (sanity check)
-            if (diffMs > 60000 && diffMs < 12 * 60 * 60 * 1000) {
-                return Math.round(diffMs / 60000); // minutes
-            }
+    // Helper function to check KPI condition
+    const checkKPICondition = (kpi: number, condition: string, threshold: number): boolean => {
+        switch (condition) {
+            case '>=': return kpi >= threshold;
+            case '<=': return kpi <= threshold;
+            case '>': return kpi > threshold;
+            case '<': return kpi < threshold;
+            default: return false;
         }
-        return 0; // Unknown or invalid
+    };
+
+    // Helper function to get emoji status from KPI value
+    const getKPIStatusEmoji = (kpi: number | null | undefined, settings: KPISettings): string => {
+        if (kpi === null || kpi === undefined || isNaN(kpi)) {
+            return settings.bad.emoji; // Default to bad if no KPI
+        }
+
+        // Check in order: good -> ok -> very bad -> bad
+        if (checkKPICondition(kpi, settings.good.condition, settings.good.threshold)) {
+            return settings.good.emoji;
+        }
+        if (checkKPICondition(kpi, settings.ok.condition, settings.ok.threshold)) {
+            return settings.ok.emoji;
+        }
+        if (checkKPICondition(kpi, settings['very bad'].condition, settings['very bad'].threshold)) {
+            return settings['very bad'].emoji;
+        }
+        if (checkKPICondition(kpi, settings.bad.condition, settings.bad.threshold)) {
+            return settings.bad.emoji;
+        }
+
+        // Fallback to bad
+        return settings.bad.emoji;
     };
 
     // Filter Data by Date Range and Calculate Stats
-    const filteredData = data.filter(row => {
-        const rowDate = parseDate(row.timestamp);
-        if (!rowDate) return false;
+    const filteredData = useMemo(() => {
+        if (!periodRange) return data;
 
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
+        return data.filter(row => {
+            const rowDate = parseDate(row.timestamp);
+            if (!rowDate) return false;
 
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+            return rowDate >= periodRange.startDate && rowDate <= periodRange.endDate;
+        });
+    }, [data, periodRange]);
 
-        return rowDate >= start && rowDate <= end;
-    });
+    // Calculate stats from filtered data
+    const { executorStats, productStats, tableData, totalVolumeIn, totalVolumeOut, totalEarningsGlobal, totalBoardCostGlobal, globalYield, statusStats } = useMemo(() => {
+        // Aggregate by Executor
+        const execStats: Record<string, ExecutorStats> = {};
+        const prodStatsMap: Record<string, { quantity: number; amount: number }> = {};
+        // Status stats structure: emoji -> { count, totalEarnings, totalBoardCost, totalVolumeIn, totalYield, boardCount }
+        const statusStatsMap: Record<string, { 
+            count: number; 
+            totalEarnings: number; 
+            totalBoardCost: number; 
+            totalVolumeIn: number; 
+            totalYield: number;
+            boardCount: number;
+        }> = {};
 
-    // Aggregate by Executor
-    const executorStats: Record<string, ExecutorStats> = {};
-    const productStatsMap: Record<string, number> = {};
+        const activeKPISettings = kpiSettings || defaultKPISettings;
 
-    let totalVolumeIn = 0;
-    let totalVolumeOut = 0;
-    let totalEarningsGlobal = 0;
+        let volIn = 0;
+        let volOut = 0;
+        let earningsGlobal = 0;
+        let boardCostGlobal = 0;
 
-    filteredData.forEach(row => {
-        const executor = row.executor || 'Неизвестный';
-        if (!executorStats[executor]) {
-            executorStats[executor] = {
-                name: executor,
-                totalBoards: 0,
-                totalVolumeIn: 0,
-                totalVolumeOut: 0,
-                avgYield: 0,
-                totalEarnings: 0,
-                totalTimeMinutes: 0,
-                avgTimePerBoard: 0
-            };
-        }
-
-        const stats = executorStats[executor];
-        const volIn = Number(row.boardVolumeM3) || 0;
-        const volOut = Number(row.productsVolumeM3) || 0;
-        const earn = Number(row.earnings) || 0;
-        const yld = Number(row.yieldPercentage) || 0;
-        const duration = calculateTime(row.boardId, row.timestamp);
-
-        stats.totalBoards++;
-        stats.totalVolumeIn += volIn;
-        stats.totalVolumeOut += volOut;
-        stats.totalEarnings += earn;
-        // Running average for yield
-        stats.avgYield = ((stats.avgYield * (stats.totalBoards - 1)) + yld) / stats.totalBoards;
-
-        if (duration > 0) {
-            stats.totalTimeMinutes += duration;
-        }
-
-        totalVolumeIn += volIn;
-        totalVolumeOut += volOut;
-        totalEarningsGlobal += earn;
-
-        // Unpivot Products
-        try {
-            if (row.products && typeof row.products === 'string') {
-                const productsMap = JSON.parse(row.products);
-                Object.entries(productsMap).forEach(([productName, qty]) => {
-                    const quantity = Number(qty) || 0;
-                    if (!productStatsMap[productName]) {
-                        productStatsMap[productName] = 0;
-                    }
-                    productStatsMap[productName] += quantity;
-                });
+        filteredData.forEach(row => {
+            const executor = row.executor || 'Неизвестный';
+            if (!execStats[executor]) {
+                execStats[executor] = {
+                    name: executor,
+                    totalBoards: 0,
+                    totalVolumeIn: 0,
+                    totalVolumeOut: 0,
+                    avgYield: 0,
+                    totalEarnings: 0,
+                    totalBoardCost: 0
+                };
             }
-        } catch (e) {
-            // Ignore parsing errors for legacy data
-        }
-    });
 
-    const productStats = Object.entries(productStatsMap)
-        .map(([product, totalQuantity]) => ({ product, totalQuantity }))
-        .sort((a, b) => b.totalQuantity - a.totalQuantity);
+            const stats = execStats[executor];
+            const rowVolIn = Number(row.boardVolumeM3) || 0;
+            const rowVolOut = Number(row.productsVolumeM3) || 0;
+            const earn = Number(row.earnings) || 0;
+            const yld = Number(row.yieldPercentage) || 0;
+            const boardCost = Number(row.board_cost) || 0;
 
-    // Finalize averages
-    const tableData = Object.values(executorStats).map(stat => ({
-        ...stat,
-        avgTimePerBoard: stat.totalTimeMinutes > 0 && stat.totalBoards > 0
-            ? Math.round(stat.totalTimeMinutes / stat.totalBoards)
-            : 0
-    })).sort((a, b) => b.totalEarnings - a.totalEarnings);
+            stats.totalBoards++;
+            stats.totalVolumeIn += rowVolIn;
+            stats.totalVolumeOut += rowVolOut;
+            stats.totalEarnings += earn;
+            stats.totalBoardCost += boardCost;
+            // Running average for yield
+            stats.avgYield = ((stats.avgYield * (stats.totalBoards - 1)) + yld) / stats.totalBoards;
 
-    const globalYield = totalVolumeIn > 0 ? (totalVolumeOut / totalVolumeIn) * 100 : 0;
+            volIn += rowVolIn;
+            volOut += rowVolOut;
+            earningsGlobal += earn;
+            boardCostGlobal += boardCost;
+
+            // Aggregate status stats based on KPI
+            const kpiValue = row.KPI !== null && row.KPI !== undefined ? Number(row.KPI) : null;
+            const statusEmoji = getKPIStatusEmoji(kpiValue, activeKPISettings);
+            if (!statusStatsMap[statusEmoji]) {
+                statusStatsMap[statusEmoji] = {
+                    count: 0,
+                    totalEarnings: 0,
+                    totalBoardCost: 0,
+                    totalVolumeIn: 0,
+                    totalYield: 0,
+                    boardCount: 0
+                };
+            }
+            const statusStat = statusStatsMap[statusEmoji];
+            statusStat.count++;
+            statusStat.totalEarnings += earn;
+            statusStat.totalBoardCost += boardCost;
+            statusStat.totalVolumeIn += rowVolIn;
+            statusStat.totalYield += yld;
+            statusStat.boardCount++;
+
+            // Unpivot Products - supports both old format (number) and new format ({count, cost})
+            try {
+                if (row.products && typeof row.products === 'string') {
+                    const productsMap = JSON.parse(row.products);
+                    Object.entries(productsMap).forEach(([productName, productData]) => {
+                        let quantity = 0;
+                        let amount = 0;
+
+                        // Check if it's new format: {count: number, cost: number}
+                        if (productData && typeof productData === 'object' && 'count' in productData) {
+                            quantity = Number((productData as any).count) || 0;
+                            const cost = Number((productData as any).cost) || 0;
+                            amount = quantity * cost;
+                        } else {
+                            // Old format: just a number
+                            quantity = Number(productData) || 0;
+                            amount = 0; // Old format doesn't have cost
+                        }
+
+                        if (!prodStatsMap[productName]) {
+                            prodStatsMap[productName] = { quantity: 0, amount: 0 };
+                        }
+                        prodStatsMap[productName].quantity += quantity;
+                        prodStatsMap[productName].amount += amount;
+                    });
+                }
+            } catch (e) {
+                // Ignore parsing errors for legacy data
+                console.error('Error parsing products:', e);
+            }
+        });
+
+        const prodStats = Object.entries(prodStatsMap)
+            .map(([product, stats]) => ({ 
+                product, 
+                totalQuantity: stats.quantity,
+                totalAmount: stats.amount
+            }))
+            .sort((a, b) => b.totalQuantity - a.totalQuantity);
+
+        // Finalize data (no additional calculations needed)
+        const tblData = Object.values(execStats).sort((a, b) => b.totalEarnings - a.totalEarnings);
+
+        const yieldGlobal = volIn > 0 ? (volOut / volIn) * 100 : 0;
+
+        // Convert status stats to array with labels and calculated averages
+        const statusStatsArray = Object.entries(statusStatsMap).map(([emoji, stats]) => ({
+            emoji,
+            count: stats.count,
+            totalEarnings: stats.totalEarnings,
+            totalBoardCost: stats.totalBoardCost,
+            totalVolumeIn: stats.totalVolumeIn,
+            avgYield: stats.boardCount > 0 ? stats.totalYield / stats.boardCount : 0,
+            label: emoji === activeKPISettings.good.emoji ? 'Хорошо' :
+                   emoji === activeKPISettings.ok.emoji ? 'Нормально' :
+                   emoji === activeKPISettings.bad.emoji ? 'Плохо' :
+                   emoji === activeKPISettings['very bad'].emoji ? 'Очень плохо' : 'Неизвестно'
+        })).sort((a, b) => {
+            // Sort by priority: good -> ok -> bad -> very bad
+            const order = [activeKPISettings.good.emoji, activeKPISettings.ok.emoji, 
+                          activeKPISettings.bad.emoji, activeKPISettings['very bad'].emoji];
+            const aIndex = order.indexOf(a.emoji);
+            const bIndex = order.indexOf(b.emoji);
+            if (aIndex === -1 && bIndex === -1) return 0;
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            return aIndex - bIndex;
+        });
+
+        return {
+            executorStats: execStats,
+            productStats: prodStats,
+            tableData: tblData,
+            totalVolumeIn: volIn,
+            totalVolumeOut: volOut,
+            totalEarningsGlobal: earningsGlobal,
+            totalBoardCostGlobal: boardCostGlobal,
+            globalYield: yieldGlobal,
+            statusStats: statusStatsArray
+        };
+    }, [filteredData, kpiSettings]);
 
     return (
         <div className="flex flex-col h-full bg-[#18181b] animate-in fade-in duration-300">
@@ -235,20 +376,8 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                     </h1>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
-                    />
-                    <span className="text-zinc-500">-</span>
-                    <input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white"
-                    />
+                <div className="flex items-center gap-3">
+                    <PeriodSelector onPeriodChange={setPeriodRange} />
                     <button
                         onClick={loadData}
                         disabled={isLoading}
@@ -273,17 +402,23 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                 )}
 
                 {/* Global Stats Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-[#27272a] p-4 rounded-xl border border-zinc-800">
-                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><Coins size={12} /> Выручка</div>
+                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><Coins size={12} /> Сумма стоимости изделий</div>
                         <div className="text-2xl font-bold text-green-400">{totalEarningsGlobal.toLocaleString()} ₽</div>
                     </div>
                     <div className="bg-[#27272a] p-4 rounded-xl border border-zinc-800">
-                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><Box size={12} /> Объем (Вход)</div>
+                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><Coins size={12} /> Сумма стоимости досок</div>
+                        <div className="text-2xl font-bold text-blue-400">
+                            {totalBoardCostGlobal > 0 ? totalBoardCostGlobal.toLocaleString() + ' ₽' : '-'}
+                        </div>
+                    </div>
+                    <div className="bg-[#27272a] p-4 rounded-xl border border-zinc-800">
+                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><Box size={12} /> Объем использования досок</div>
                         <div className="text-2xl font-bold text-white">{totalVolumeIn.toFixed(3)} м³</div>
                     </div>
                     <div className="bg-[#27272a] p-4 rounded-xl border border-zinc-800">
-                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><TrendingUp size={12} /> Средний КПД</div>
+                        <div className="text-zinc-500 text-xs mb-1 flex items-center gap-1"><TrendingUp size={12} /> Средний КПІ</div>
                         <div className={`text-2xl font-bold ${globalYield > 50 ? 'text-green-400' : 'text-orange-400'}`}>
                             {globalYield.toFixed(1)}%
                         </div>
@@ -308,16 +443,17 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                             <thead className="bg-zinc-800 text-zinc-400 uppercase text-xs">
                                 <tr>
                                     <th className="px-4 py-3">Сотрудник</th>
-                                    <th className="px-4 py-3 text-right">Партий</th>
-                                    <th className="px-4 py-3 text-right">Выручка</th>
+                                    <th className="px-4 py-3 text-right">Кол.Дошок (шт)</th>
+                                    <th className="px-4 py-3 text-right">Сумма стоимости изделий</th>
+                                    <th className="px-4 py-3 text-right">Сумма стоимости досок</th>
+                                    <th className="px-4 py-3 text-right">Объем использования досок</th>
                                     <th className="px-4 py-3 text-center">КПД %</th>
-                                    <th className="px-4 py-3 text-center">Время/Доска (мин)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800">
                                 {tableData.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                                        <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
                                             Нет данных за выбранный период
                                         </td>
                                     </tr>
@@ -330,15 +466,76 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                                                 </div>
                                                 {stat.name}
                                             </td>
-                                            <td className="px-4 py-3 text-right text-zinc-300">{stat.totalBoards}</td>
-                                            <td className="px-4 py-3 text-right text-green-400 font-bold">{stat.totalEarnings}</td>
+                                            <td className="px-4 py-3 text-right text-zinc-300 font-bold">{stat.totalBoards}</td>
+                                            <td className="px-4 py-3 text-right text-green-400 font-bold">{stat.totalEarnings.toLocaleString()} ₽</td>
+                                            <td className="px-4 py-3 text-right text-blue-400 font-bold">
+                                                {stat.totalBoardCost > 0 ? stat.totalBoardCost.toLocaleString() + ' ₽' : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-zinc-300">
+                                                {stat.totalVolumeIn.toFixed(3)} м³
+                                            </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className={`px-2 py-1 rounded text-xs ${stat.avgYield > 60 ? 'bg-green-900/30 text-green-400' : 'bg-orange-900/30 text-orange-400'}`}>
                                                     {stat.avgYield.toFixed(1)}%
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3 text-center text-zinc-400">
-                                                {stat.avgTimePerBoard || '-'}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Status Stats Section */}
+                <div className="bg-[#27272a] rounded-xl border border-zinc-800 overflow-hidden">
+                    <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+                        <h3 className="font-bold flex items-center gap-2 text-zinc-200">
+                            <TrendingUp size={18} />
+                            Показатели статусов
+                        </h3>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-zinc-800 text-zinc-400 uppercase text-xs">
+                                <tr>
+                                    <th className="px-4 py-3">Статус</th>
+                                    <th className="px-4 py-3 text-right">Количество досок (шт)</th>
+                                    <th className="px-4 py-3 text-right">Сумма стоимости изделий</th>
+                                    <th className="px-4 py-3 text-right">Сумма стоимости досок</th>
+                                    <th className="px-4 py-3 text-right">Объем использования досок</th>
+                                    <th className="px-4 py-3 text-center">Средний КПД %</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800">
+                                {statusStats.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                                            Нет данных о статусах
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    statusStats.map((stat, idx) => (
+                                        <tr key={stat.emoji} className="hover:bg-zinc-800/50 transition-colors">
+                                            <td className="px-4 py-3 font-medium text-white flex items-center gap-2">
+                                                <span className="text-2xl">{stat.emoji}</span>
+                                                <span>{stat.label}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-zinc-300 font-bold">{stat.count}</td>
+                                            <td className="px-4 py-3 text-right text-green-400 font-bold">
+                                                {stat.totalEarnings.toLocaleString()} ₽
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-blue-400 font-bold">
+                                                {stat.totalBoardCost > 0 ? stat.totalBoardCost.toLocaleString() + ' ₽' : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-zinc-300">
+                                                {stat.totalVolumeIn.toFixed(3)} м³
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`px-2 py-1 rounded text-xs ${stat.avgYield > 60 ? 'bg-green-900/30 text-green-400' : 'bg-orange-900/30 text-orange-400'}`}>
+                                                    {stat.avgYield.toFixed(1)}%
+                                                </span>
                                             </td>
                                         </tr>
                                     ))
@@ -363,12 +560,13 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                                 <tr>
                                     <th className="px-4 py-3">Продукция</th>
                                     <th className="px-4 py-3 text-right">Количество (шт)</th>
+                                    <th className="px-4 py-3 text-right">Сумма (₽)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-800">
                                 {productStats.length === 0 ? (
                                     <tr>
-                                        <td colSpan={2} className="px-4 py-8 text-center text-zinc-500">
+                                        <td colSpan={3} className="px-4 py-8 text-center text-zinc-500">
                                             Нет данных о продукции
                                         </td>
                                     </tr>
@@ -379,6 +577,9 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onBack, setting
                                                 {stat.product}
                                             </td>
                                             <td className="px-4 py-3 text-right text-zinc-300 font-bold">{stat.totalQuantity}</td>
+                                            <td className="px-4 py-3 text-right text-green-400 font-bold">
+                                                {stat.totalAmount > 0 ? stat.totalAmount.toLocaleString() : '-'}
+                                            </td>
                                         </tr>
                                     ))
                                 )}

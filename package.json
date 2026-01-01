@@ -10,10 +10,11 @@
     "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
-    "react-dom": "^19.2.1",
     "@google/genai": "^1.33.0",
+    "@webdatarocks/webdatarocks": "^1.4.21",
     "lucide-react": "^0.560.0",
-    "react": "^19.2.1"
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
