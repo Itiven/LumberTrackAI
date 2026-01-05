@@ -189,32 +189,30 @@ const AnalyticsPivotTable: React.FC<AnalyticsPivotTableProps> = ({ onBack, setti
     <div className="flex flex-col h-full bg-[#18181b] text-white animate-in slide-in-from-right duration-300">
       {/* Header */}
       <div className="border-b border-zinc-800">
-        <div className="flex items-center gap-4 p-6 pb-4 md:max-w-5xl md:mx-auto md:w-full">
-          <button
-            onClick={onBack}
-            className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors"
-          >
-            <ArrowLeft size={24} />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold">Сводная таблица</h1>
-            <p className="text-zinc-400 text-sm mt-1">Данные из листа "ОТЧЕТ"</p>
-          </div>
-          <button
-            onClick={loadData}
-            disabled={isLoading}
-            className="p-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors disabled:opacity-50"
-            title="Обновить данные"
-          >
-            <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-        
-        {/* Period Selector */}
-        <div className="px-6 pb-4 md:max-w-5xl md:mx-auto md:w-full">
+        <div className="flex items-center justify-between p-6 pb-4 md:max-w-5xl md:mx-auto md:w-full">
           <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-400">Период:</span>
+            <button
+              onClick={onBack}
+              className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors"
+            >
+              <ArrowLeft size={24} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold">Сводная таблица</h1>
+              <p className="text-zinc-400 text-sm mt-1">Данные из листа "ОТЧЕТ"</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
             <PeriodSelector onPeriodChange={handlePeriodChange} />
+            <button
+              onClick={loadData}
+              disabled={isLoading}
+              className="p-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              title="Обновить данные"
+            >
+              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+            </button>
           </div>
         </div>
       </div>
