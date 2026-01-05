@@ -4,6 +4,7 @@ import { fetchUnpivotedReport } from '../../services/sheetService';
 import { AppSettings } from '../../App';
 import PeriodSelector, { PeriodRange } from '../periodSelector/PeriodSelector';
 import '@webdatarocks/webdatarocks/webdatarocks.css';
+import ukLocale from '../../uk.json';
 
 // Dynamic import for WebDataRocks to handle CommonJS module
 let WebDataRocks: any = null;
@@ -128,6 +129,9 @@ const AnalyticsWebDataRocks: React.FC<AnalyticsWebDataRocksProps> = ({ onBack, s
         width: '100%',
         height: '100%',
         toolbar: true, // Toolbar parameter should be at the top level, not inside report.options
+        global: {
+          localization: ukLocale
+        },
         report: {
           dataSource: {
             type: 'json',
